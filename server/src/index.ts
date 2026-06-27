@@ -5,13 +5,13 @@ import express from 'express'
 import cors from 'cors'
 
 import { pool } from "./db/db.js"
-import uploadRouter from "./routes/upload.js"
+import videoRoutes from "./routes/video.routes.js"
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-app.use("/api/v1/video", uploadRouter);
+app.use("/api/v1/video", videoRoutes);
 
 
 const port = Number(process.env.PORT) || 5001;
