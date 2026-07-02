@@ -1,10 +1,12 @@
-import type { Request, Response } from "express";
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import type { Request, Response } from "express";
 
+import { uploadToCloudinary } from '../services/cloudinary.service.js';
 import { pool } from "../db/db.js";
 import { processVideo } from "../services/video.service.js";
+
 
 
 
@@ -33,63 +35,64 @@ export const localUpload = async (req: Request, res: Response): Promise<any> => 
 };
 
 export const processVideoAsset = async (req: Request, res: Response) => {
-    const { videoId } = req.body;
+    let inputPath = '';
 
-    if (!videoId) {
-        return res.status(400).json({ error: "Video ID is required" });
-    }
-    try {
-        const fetchQuery = `SELECT * FROM videos WHERE id = $1`;
-        const { rows } = await pool.query(fetchQuery, [videoId]);
+    try{
+        const {videoId} = req.body;
 
-        if (rows.length === 0) {
-            return res.status(404).json({ error: "Video not found" });
-        }
-        const videoRecord = rows[0];
-        const rawInputPath = videoRecord.local_filepath;
-
-        const absoluteInputPath = path.isAbsolute(rawInputPath)
-            ? rawInputPath
-            : path.join(__dirname, '../../', rawInputPath);
-
-        if(!fs.existsSync(absoluteInputPath)){
-            console.error(`Source file missing at ${absoluteInputPath}`);
-            return res.status(400).json({
-                error: "Source video file is missing."
-            });
+        if(!videoId){
+            return res.status(400).json({error: 'Missing videoId'});
         }
 
-        const filename = path.basename(absoluteInputPath);
-        const outputPath = path.join(__dirname, '../../uploads/processed', `processed-${filename}`);
+        const result = await pool.query('SELECT local_filepath FROM videos WHERE id = $1', [videoId]);
 
-        fs.mkdirSync(path.dirname(outputPath), { recursive: true });
+        if(result.rows.length === 0){
+            return res.status(404).json({error: 'Video record not found'});
+        }
 
-        await pool.query(`UPDATE videos SET processing_status = 'processing' WHERE id=$1`, [videoId]);
+        const relativePath = result.rows[0].local_filepath;
+        inputPath = path.join(__dirname, '../../', relativePath);
 
-        console.log(`Starting FFmpeg processing for video: ${videoId}...`);
+        if(!fs.existsSync(inputPath)){
+            return res.status(404).json({error: 'Source video file is missing!!'});
+        }
 
-        await processVideo(absoluteInputPath, outputPath);
+        const processedDir = path.join(__dirname, '../../uploads/processed');
+        fs.mkdirSync(processedDir, {recursive: true});
 
-        const relativeOutputPath = path.join('uploads/processed', `processed-${filename}`);
+        const outputFilename = `processed-${Date.now()}.mp4`;
+        const outputPath = path.join(processedDir, outputFilename);
 
-        const updateQuery = `
-        UPDATE videos
-        SET local_filepath = $1,
-        processing_status = 'completed'
-        WHERE id = $2
-        RETURNING *;
-        `;
-        const updateResult = await pool.query(updateQuery, [relativeOutputPath, videoId]);
+        console.log(`FFmpeg Processing Started for video: ${videoId}`);
+        await processVideo(inputPath, outputPath);
+        console.log('FFmpeg Processing Complete.');
 
-        return res.status(200).json({
-            message: "Video processed successfully!",
-            video: updateResult.rows[0]
+        console.log('Uploading finalized asset to Cloudinary...');
+        const cloudinaryUrl = await uploadToCloudinary(outputPath);
+        console.log(`Cloudinary Upload Complete: ${cloudinaryUrl}`);
+
+        await pool.query(
+            'UPDATE videos SET cloudinary_url = $1, processing_status = $2 WHERE id = $3', [cloudinaryUrl, 'completed', videoId]
+        );
+
+        if(fs.existsSync(inputPath)){
+            fs.unlinkSync(inputPath);
+            console.log('Local stagin files cleaned.');
+        }
+
+        res.status(200).json({
+            message: 'Pipeline executed successfully',
+            status: 'completed',
+            cloudUrl: cloudinaryUrl
         });
-    } catch (error) {
-        console.error("Controller Error during video processing:", error);
+        
 
-        await pool.query(`UPDATE videos SET processing_status = 'failed' WHERE id = $1`, [videoId]);
+    } catch(error){
+        console.error('Pipeline Execution Failed:', error);
 
-        return res.status(500).json({ error: "Failed to process video" });
+        if(inputPath && fs.existsSync(inputPath)){
+            fs.unlinkSync(inputPath);
+        }
+        res.status(500).json({error: 'Internal server error during video processing'});
     }
 };
