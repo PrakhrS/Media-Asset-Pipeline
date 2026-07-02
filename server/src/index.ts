@@ -4,7 +4,7 @@ dotenv.config();
 import express from 'express'
 import cors from 'cors'
 
-import { pool } from "./db/db.js"
+import { initVideoModel } from "./models/video.model.js";
 import videoRoutes from "./routes/video.routes.js"
 
 const app = express();
@@ -20,7 +20,18 @@ app.get('/api/health', (req, res) => {
     res.send("API is running");
 });
 
-app.listen(port, () => {
-    console.log(`Server running on port: ${port}`);
-});
+const startServer = async () => {
+  try {
+    await initVideoModel();
+
+    app.listen(port, () => {
+        console.log(`Server running on port: ${port}`);
+    });
+  } catch (error) {
+    console.error("Critical: Database or Server initialization failed:", error);
+    process.exit(1);
+  }
+};
+
+startServer();
 
