@@ -31,3 +31,30 @@ export const uploadToCloudinary = async(localFilePath: string): Promise<string> 
         throw error;
     }
 };
+
+
+/**
+ * Uploads multiple files to Cloudinary concurrently.
+ * @param filePaths - Array of absolute local file paths to upload
+ * @returns Array of secure Cloudinary URLs
+ */
+
+export const uploadMultipleFiles = async(filePaths: string[]): Promise<string[]> =>{
+    try{
+        console.log(`Transmitting ${filePaths.length} visual frames to Cloudinary...`);
+
+        const uploadPromises = filePaths.map((filePath) => {
+            return cloudinary.uploader.upload(filePath, { folder: 'media_pipeline/frames' });
+        });
+
+        const results = await Promise.all(uploadPromises);
+
+        console.log(`Successfully uploaded ${results.length} frames to the cloud!`);
+
+        return results.map(result => result.secure_url);
+
+    } catch(error){
+        console.error('Error during batch Cloudinary upload:', error);
+        throw error;
+    }
+};
