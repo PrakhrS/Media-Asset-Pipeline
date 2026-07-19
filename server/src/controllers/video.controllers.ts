@@ -36,8 +36,10 @@ export const localUpload = async (req: Request, res: Response): Promise<any> => 
 
 export const processVideoAsset = async (req: Request, res: Response) => {
     let inputPath = '';
+    const io = req.app.get('io');
 
     try {
+        // Db lookup
         const { videoId } = req.body;
 
         if (!videoId) {
@@ -63,6 +65,13 @@ export const processVideoAsset = async (req: Request, res: Response) => {
         const outputFilename = `processed-${Date.now()}.mp4`;
         const outputPath = path.join(processedDir, outputFilename);
 
+        io.emit('pipeline-update', {
+            status: 'trascoding',
+            progress: 25,
+            message: 'Cropping and extracting frames...'
+        });
+
+        //FFmpeg processing
         console.log(`FFmpeg Processing Started for video: ${videoId}`);
         await processVideo(inputPath, outputPath);
 
@@ -71,11 +80,26 @@ export const processVideoAsset = async (req: Request, res: Response) => {
 
         console.log('FFmpeg Processing Complete.');
 
+        io.emit('pipeline-update', {
+            status: 'uploading',
+            progress: 50,
+            message: 'Syncing assets to Cloudinary...'
+        });
+
+
+        //Cloudinary Upload
         console.log('Uploading finalized asset to Cloudinary...');
         const cloudinaryUrl = await uploadToCloudinary(outputPath);
         const frameUrls = await uploadMultipleFiles(framePaths);
         console.log(`Cloudinary Upload Complete: ${cloudinaryUrl}`);
 
+        io.emit('pipeline-update', {
+            status: 'analyzing',
+            progress: 75,
+            message: 'Analyzing visual with GPT-4o...'
+        });
+
+        //AI Service and Db Save
         const aiMetadata = await generateMarketingMetadata(frameUrls);
         console.log('AI Analysis Complete.');
 
@@ -95,6 +119,17 @@ export const processVideoAsset = async (req: Request, res: Response) => {
             videoId
         ]);
 
+        io.emit('pipeline-update', {
+            status: 'completed',
+            progress: 100,
+            message: 'Pipeline complete!',
+            data: {
+                ...aiMetadata,
+                videoUrl: cloudinaryUrl
+            }
+        });
+
+        //Cleanup
         if (fs.existsSync(inputPath)) {
             fs.unlinkSync(inputPath);
         }
