@@ -3,6 +3,8 @@ dotenv.config();
 
 import express from 'express'
 import cors from 'cors'
+import http from 'http'
+import { Server } from 'socket.io';
 
 import { initVideoModel } from "./models/video.model.js";
 import videoRoutes from "./routes/video.routes.js"
@@ -10,6 +12,22 @@ import videoRoutes from "./routes/video.routes.js"
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+const server = http.createServer(app);
+
+const io = new Server(server, {
+  cors: {
+    origin: "http://localhost:5173",
+    methods: ["GET", "POST"]
+  }
+});
+
+app.set('io', io);
+
+io.on('connection', (socket) =>{
+  console.log('A client connected:', socket.id);
+});
+
 
 app.use("/api/v1/video", videoRoutes);
 
@@ -24,7 +42,7 @@ const startServer = async () => {
   try {
     await initVideoModel();
 
-    app.listen(port, () => {
+    server.listen(port, () => {
         console.log(`Server running on port: ${port}`);
     });
   } catch (error) {

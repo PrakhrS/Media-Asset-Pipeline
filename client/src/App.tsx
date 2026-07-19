@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import './App.css'
-import VideoUpload from './components/VideoUpload'
+import VideoDashboard from './components/VideoDashboard'
 
 function App() {
   const [data, setData] = useState("");
@@ -18,12 +18,12 @@ function App() {
   }, []);
 
   return (
-    <div style={{ fontFamily: 'sans-serif', padding: '20px', maxWidth: '600px', margin: '0 auto' }}>
-      <h1>Media Asset Pipeline</h1>
-      <div style={{ marginBottom: '20px', padding: '10px', backgroundColor: '#f0f0f0', borderRadius: '4px', fontSize: '0.9rem' }}>
+    <div style={{ fontFamily: 'sans-serif', margin: '0 auto' }}>
+      {/* <h1>Media Asset Pipeline</h1> */}
+      {/* <div style={{ marginBottom: '20px', padding: '10px', backgroundColor: '#f0f0f0', borderRadius: '4px', fontSize: '0.9rem' }}>
         <strong>Backend status:</strong> {data || 'Checking...'}
-      </div>
-      <VideoUpload />
+      </div> */}
+      <VideoDashboard />
     </div>
   )
 }
