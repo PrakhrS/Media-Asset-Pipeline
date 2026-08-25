@@ -124,8 +124,10 @@ export const processVideoAsset = async (req: Request, res: Response) => {
             progress: 100,
             message: 'Pipeline complete!',
             data: {
-                ...aiMetadata,
-                videoUrl: cloudinaryUrl
+                id: videoId,
+                video_url: cloudinaryUrl,
+                caption: aiMetadata.caption,
+                tags: aiMetadata.tags || [],
             }
         });
 
