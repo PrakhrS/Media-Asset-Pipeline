@@ -1,23 +1,39 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import {io} from 'socket.io-client';
 
 const socket = io('http://localhost:5001');
+
+interface VideoResultData {
+  id?: string;
+  original_filename?: string;
+  video_url?: string;
+  secure_url?: string;
+  videoUrl?: string;
+  caption?: string;
+  ai_tags?: string[] | string;
+  tags?: string[] | string;
+  hashtags?: string[] | string;
+  
+}
 
 export default function VideoDashboard(){
   
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [progress, setProgress] = useState<number>(0);
   const [statusMessage, setStatusMessage] = useState<string>('Awaiting upload...');
-  const [finalData, setFinalData] = useState<any>(null);
+  const [finalData, setFinalData] = useState<VideoResultData | null>(null);
+  const [isProcessing, setIsProcessing] = useState<boolean>(false);
+  const [copiedSection, setCopiedSection] = useState<'caption' | 'tags' | null>(null);
 
   useEffect(() => {
-    socket.on('pipeline-update', (payload) => {
+    socket.on('pipeline-update', (payload : { status: string; progress: number; message: string; data?: VideoResultData}) => {
       setProgress(payload.progress);
       setStatusMessage(payload.message);
 
       if(payload.status === 'completed' && payload.data){
         console.log("Incoming data:", payload.data);
         setFinalData(payload.data);
+        setIsProcessing(false);
       }
     });
 
@@ -40,35 +56,72 @@ export default function VideoDashboard(){
   const handleUpload = async () => {
     if(!selectedFile) return;
 
+    setIsProcessing(true);
+    setStatusMessage('Uploading asset to server...');
+    setProgress(10);
+
     const formData = new FormData();
     formData.append('asset', selectedFile);
 
-    try{
-      setStatusMessage('Uploading raw file to server...');
-      setProgress(10);
-
+    try {
+      // 1. Initial upload to staging
       const uploadRes = await fetch('http://localhost:5001/api/v1/video/local-upload', {
         method: 'POST',
         body: formData,
       });
 
-      if(uploadRes.ok){
-        const data = await uploadRes.json();
+      if (!uploadRes.ok) throw new Error('Local upload failed');
+      const uploadData = await uploadRes.json();
+      const videoId = uploadData.data?.id || uploadData.id;
 
-        await fetch('http://localhost:5001/api/v1/video/process', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json'},
-          body: JSON.stringify({videoId: data.video.id})
-        });
-      } else{
-        setStatusMessage('Upload Failed.');
-      }
-    }catch(error){
-      console.error('Upload error:', error);
-      setStatusMessage('Network error.');
-    }
-    
+      // 2. Trigger FFmpeg + Cloudinary + AI Pipeline
+      const processRes = await fetch('http://localhost:5001/api/v1/video/process', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ videoId }),
+      });
+
+      if (!processRes.ok) throw new Error('Video processing request failed');
+    } catch (error) {
+      console.error('Pipeline failed:', error);
+      setStatusMessage('Upload/Processing failed. Check server logs.');
+      setIsProcessing(false);
+    }  
   };
+
+  const handleReset = () => {
+    setSelectedFile(null);
+    setProgress(0);
+    setStatusMessage('Awaiting upload...');
+    setFinalData(null);
+    setIsProcessing(false);
+  };
+
+  const copyToClipboard = (text: string, type: 'caption' | 'tags') => {
+    navigator.clipboard.writeText(text);
+    setCopiedSection(type);
+    setTimeout(() => setCopiedSection(null), 2000);
+  };
+
+  const parseTags = () : string[] => {
+    if(!finalData) return [];
+    const rawTags = finalData.tags || finalData.ai_tags || finalData.hashtags || [];
+
+    if(Array.isArray(rawTags)){
+      return rawTags.map((t) => (t.startsWith('#') ? t: `#${t.trim()}`));
+    }
+    if(typeof rawTags === 'string'){
+      return rawTags.replace(/[{}"[\]]/g, '')
+      .split(',')
+      .map((t) => t.trim())
+      .filter(Boolean)
+      .map((t) => (t.startsWith('#')?t : `#${t}`));
+    }
+    return [];
+  };
+
+  const tagsList = parseTags();
+  const videoSource = finalData?.secure_url || finalData?.video_url || finalData?.videoUrl
 
   return (
   <div className="min-h-screen bg-gray-100 p-4 md:p-8 flex items-center justify-center">
@@ -104,23 +157,42 @@ export default function VideoDashboard(){
             )}
 
             {/* The Input Button */}
-            <label className="bg-blue-600 text-white px-6 py-2.5 rounded-lg font-medium shadow-sm hover:bg-blue-700 hover:shadow-md cursor-pointer transition-all">
+            <label className={`px-6 py-2.5 rounded-lg font-medium shadow-sm transition-all ${
+              isProcessing
+                ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                : 'bg-blue-600 text-white hover:bg-blue-700 hover:shadow-md cursor-pointer'
+            }`}>
               {selectedFile ? 'Change File' : 'Browse Files'}
               <input 
                 type="file" 
                 className="hidden" 
                 accept="video/*" 
-                onChange={handleFileChange} 
+                onChange={handleFileChange}
+                disabled={isProcessing} 
               />
             </label>
 
-            {/* Upload Button */}
-            {selectedFile && (
+            {/* Action Buttons */}
+            {selectedFile && !finalData && (
               <button
                 onClick={handleUpload}
-                className="mt-6 w-full bg-blue-600 text-white px-6 py-3 rounded-lg font-bold shadow-md hover:bg-blue-700 transition-all"
+                disabled={isProcessing}
+                className={`mt-6 w-full px-6 py-3 rounded-lg font-bold shadow-md transition-all ${
+                  isProcessing
+                    ? 'bg-gray-400 text-gray-100 cursor-not-allowed'
+                    : 'bg-blue-600 text-white hover:bg-blue-700'
+                }`}
               >
-                Upload & Process Video
+                {isProcessing ? 'Processing in Pipeline...' : 'Upload & Process Video'}
+              </button>
+            )}
+
+            {finalData && (
+              <button
+                onClick={handleReset}
+                className="mt-6 w-full bg-gray-200 text-gray-700 px-6 py-3 rounded-lg font-bold shadow-md hover:bg-gray-300 transition-all"
+              >
+                Process Another Video
               </button>
             )}
           </div>
@@ -145,33 +217,66 @@ export default function VideoDashboard(){
               </div>
 
               {/* The Cloudinary Video Player */}
-              <div className="w-full bg-black rounded-xl overflow-hidden shadow-lg border border-gray-200">
-                <video 
-                  src={finalData.videoUrl || finalData.secure_url} // Adjust key based on your backend response
-                  controls 
-                  className="w-full h-auto"
-                />
-              </div>
+              {videoSource ? (
+                <div className="w-full bg-black rounded-xl overflow-hidden shadow-lg border border-gray-200 flex justify-center">
+                  <video 
+                    src={videoSource}
+                    controls 
+                    className="w-full h-auto max-h-96 object-contain"
+                  />
+                </div>
+              ) : (
+                <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg text-yellow-800 text-sm text-center">
+                  Video processed, but stream URL is missing in the response.
+                </div>
+              )}
 
               {/* The AI Marketing Metadata */}
-              <div className="bg-blue-50 p-5 rounded-xl border border-blue-100 shadow-sm">
-                <h4 className="font-bold text-blue-900 mb-2 flex items-center gap-2">
-                  <svg className="w-5 h-5 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
-                    <path d="M10 12a2 2 0 100-4 2 2 0 000 4z" />
-                    <path fillRule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clipRule="evenodd" />
-                  </svg>
-                  AI Generated Caption
-                </h4>
-                <p className="text-gray-700 italic">"{finalData.caption || finalData.marketing_caption}"</p>
+              <div className="bg-blue-50 p-5 rounded-xl border border-blue-100 shadow-sm relative">
+                <div className="flex justify-between items-center mb-2">
+                  <h4 className="font-bold text-blue-900 flex items-center gap-2">
+                    <svg className="w-5 h-5 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
+                      <path d="M10 12a2 2 0 100-4 2 2 0 000 4z" />
+                      <path fillRule="evenodd" d="M.458 10C1.732 5.943 5.522 3 10 3s8.268 2.943 9.542 7c-1.274 4.057-5.064 7-9.542 7S1.732 14.057.458 10zM14 10a4 4 0 11-8 0 4 4 0 018 0z" clipRule="evenodd" />
+                    </svg>
+                    AI Generated Caption
+                  </h4>
+                  {finalData.caption && (
+                    <button
+                      onClick={() => copyToClipboard(finalData.caption || '', 'caption')}
+                      className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+                    >
+                      {copiedSection === 'caption' ? 'Copied!' : 'Copy'}
+                    </button>
+                  )}
+                </div>
+                <p className="text-gray-700 italic">"{finalData.caption || 'No caption generated'}"</p>
               </div>
 
               {/* Hashtags */}
-              <div className="flex flex-wrap gap-2 mt-2">
-                {(finalData.hashtags || ['#AI', '#Marketing', '#Tech']).map((tag: string, index: number) => (
-                  <span key={index} className="bg-gray-100 text-gray-700 px-3 py-1 rounded-full text-sm font-medium hover:bg-gray-200 transition-colors cursor-default">
-                    {tag.startsWith('#') ? tag : `#${tag}`}
-                  </span>
-                ))}
+              <div className="w-full mt-2">
+                <div className="flex justify-between items-center mb-2">
+                  <h4 className="font-bold text-gray-700 text-sm">Algorithmic Tags</h4>
+                  {tagsList.length > 0 && (
+                    <button
+                      onClick={() => copyToClipboard(tagsList.join(' '), 'tags')}
+                      className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+                    >
+                      {copiedSection === 'tags' ? 'Copied!' : 'Copy All'}
+                    </button>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {tagsList.length > 0 ? (
+                    tagsList.map((tag: string, index: number) => (
+                      <span key={index} className="bg-gray-100 text-gray-700 px-3 py-1 rounded-full text-sm font-medium hover:bg-gray-200 transition-colors cursor-default">
+                        {tag.startsWith('#') ? tag : `#${tag}`}
+                      </span>
+                    ))
+                  ) : (
+                    <span className="text-sm text-gray-500">No tags extracted</span>
+                  )}
+                </div>
               </div>
 
             </div>
