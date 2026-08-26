@@ -10,10 +10,10 @@ interface VideoResultData {
   secure_url?: string;
   videoUrl?: string;
   caption?: string;
+  ai_caption?: string;
   ai_tags?: string[] | string;
   tags?: string[] | string;
   hashtags?: string[] | string;
-  
 }
 
 export default function VideoDashboard(){
@@ -72,7 +72,14 @@ export default function VideoDashboard(){
 
       if (!uploadRes.ok) throw new Error('Local upload failed');
       const uploadData = await uploadRes.json();
-      const videoId = uploadData.data?.id || uploadData.id;
+      const videoId = uploadData.video?.id || uploadData?.data?.id || uploadData?.id;
+
+      if (!videoId) {
+        throw new Error('Video ID was missing in upload response.');
+      }
+
+      setStatusMessage('Asset uploaded. Starting transcoding & AI analysis...');
+      setProgress(25);
 
       // 2. Trigger FFmpeg + Cloudinary + AI Pipeline
       const processRes = await fetch('http://localhost:5001/api/v1/video/process', {
@@ -217,10 +224,10 @@ export default function VideoDashboard(){
               </div>
 
               {/* The Cloudinary Video Player */}
-              {videoSource ? (
+              {(finalData.video_url || finalData.videoUrl) ? (
                 <div className="w-full bg-black rounded-xl overflow-hidden shadow-lg border border-gray-200 flex justify-center">
                   <video 
-                    src={videoSource}
+                    src={finalData.video_url || finalData.videoUrl}
                     controls 
                     className="w-full h-auto max-h-96 object-contain"
                   />
@@ -241,16 +248,16 @@ export default function VideoDashboard(){
                     </svg>
                     AI Generated Caption
                   </h4>
-                  {finalData.caption && (
+                  {(finalData.ai_caption || finalData.caption) && (
                     <button
-                      onClick={() => copyToClipboard(finalData.caption || '', 'caption')}
+                      onClick={() => copyToClipboard(finalData.ai_caption || finalData.caption || '', 'caption')}
                       className="text-sm text-blue-600 hover:text-blue-800 font-medium"
                     >
                       {copiedSection === 'caption' ? 'Copied!' : 'Copy'}
                     </button>
                   )}
                 </div>
-                <p className="text-gray-700 italic">"{finalData.caption || 'No caption generated'}"</p>
+                <p className="text-gray-700 italic">"{finalData.ai_caption || finalData.caption || 'No caption generated'}"</p>
               </div>
 
               {/* Hashtags */}
@@ -267,9 +274,9 @@ export default function VideoDashboard(){
                   )}
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  {tagsList.length > 0 ? (
-                    tagsList.map((tag: string, index: number) => (
-                      <span key={index} className="bg-gray-100 text-gray-700 px-3 py-1 rounded-full text-sm font-medium hover:bg-gray-200 transition-colors cursor-default">
+                  {((finalData.ai_tags || finalData.tags || []) as string[]).length > 0 ? (
+                    ((finalData.ai_tags || finalData.tags || []) as string[]).map((tag: string, idx: number) => (
+                      <span key={idx} className="bg-gray-100 text-gray-700 px-3 py-1 rounded-full text-sm font-medium hover:bg-gray-200 transition-colors cursor-default">
                         {tag.startsWith('#') ? tag : `#${tag}`}
                       </span>
                     ))

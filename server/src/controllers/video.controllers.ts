@@ -96,7 +96,7 @@ export const processVideoAsset = async (req: Request, res: Response) => {
         io.emit('pipeline-update', {
             status: 'analyzing',
             progress: 75,
-            message: 'Analyzing visual with GPT-4o...'
+            message: 'Analyzing visual with Gemini...'
         });
 
         //AI Service and Db Save
@@ -126,8 +126,8 @@ export const processVideoAsset = async (req: Request, res: Response) => {
             data: {
                 id: videoId,
                 video_url: cloudinaryUrl,
-                caption: aiMetadata.caption,
-                tags: aiMetadata.tags || [],
+                ai_caption: aiMetadata.caption,
+                ai_tags: aiMetadata.tags || [],
             }
         });
 
