@@ -11,11 +11,12 @@ import path from 'path';
  * 
  * @param inputPath - Absolute path to the source video file in uploads/temp
  * @param outputPath - Absolute path where the processed video should be saved in uploads/processed
+ * @param centerX - Center coordinate of the focal subject as a percentage (default 50)
  */
-export const processVideo = (inputPath: string, outputPath: string): Promise<void> => {
+export const processVideo = (inputPath: string, outputPath: string, centerX: number = 50): Promise<void> => {
   return new Promise((resolve, reject) => {
     ffmpeg(inputPath)
-      .videoFilters('crop=2*trunc(ih*9/32):2*trunc(ih/2)')
+      .videoFilters(`crop=w='2*trunc(ih*9/32)':h='2*trunc(ih/2)':x='2*trunc(max(0, min(iw-(ih*9/16), (iw*${centerX}/100)-(ih*9/32)))/2)':y=0`)
       .on('start', (commandLine) => {
         console.log('Spawned Ffmpeg with command: ' + commandLine);
       })
@@ -79,5 +80,33 @@ export const extractVideoFrames = (inputPath: string, outputDir: string): Promis
         size: '1080x1920'
       });
     });
+  });
+};
+
+/**
+ * Extracts a single scout frame from the video at the 50% mark.
+ * @param inputPath - Absolute path to the source video file
+ * @param outputFolder - Absolute path to the output folder
+ * @returns Absolute path to the generated scout frame
+ */
+export const extractScoutFrame = (inputPath: string, outputFolder: string): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const timestamp = Date.now();
+    const filename = `scout-${timestamp}.jpg`;
+    
+    ffmpeg(inputPath)
+      .on('end', () => {
+        console.log(`Scout frame extracted successfully: ${filename}`);
+        resolve(path.join(outputFolder, filename));
+      })
+      .on('error', (err) => {
+        console.error('Error extracting scout frame:', err);
+        reject(err);
+      })
+      .screenshots({
+        timestamps: ['50%'],
+        filename: filename,
+        folder: outputFolder,
+      });
   });
 };

@@ -5,8 +5,8 @@ import type { Request, Response } from "express";
 
 import { uploadToCloudinary, uploadMultipleFiles } from '../services/cloudinary.service.js';
 import { pool } from "../db/db.js";
-import { processVideo, extractVideoFrames } from "../services/video.service.js";
-import { generateMarketingMetadata } from '../services/ai.service.js';
+import { processVideo, extractVideoFrames, extractScoutFrame } from "../services/video.service.js";
+import { generateMarketingMetadata, getSubjectCoordinates } from '../services/ai.service.js';
 
 
 
@@ -36,6 +36,7 @@ export const localUpload = async (req: Request, res: Response): Promise<any> => 
 
 export const processVideoAsset = async (req: Request, res: Response) => {
     let inputPath = '';
+    let scoutFramePath = '';
     const io = req.app.get('io');
 
     try {
@@ -65,6 +66,35 @@ export const processVideoAsset = async (req: Request, res: Response) => {
         const outputFilename = `processed-${Date.now()}.mp4`;
         const outputPath = path.join(processedDir, outputFilename);
 
+        let centerX = 50;
+
+        try {
+            io.emit('pipeline-update', {
+                status: 'scouting',
+                progress: 15,
+                message: 'Scouting spatial coordinates...'
+            });
+
+            console.log('Extracting scout frame...');
+            scoutFramePath = await extractScoutFrame(inputPath, processedDir);
+            
+            console.log('Uploading scout frame to Cloudinary...');
+            const scoutCloudinaryUrl = await uploadToCloudinary(scoutFramePath);
+            
+            console.log('Fetching subject coordinates from AI...');
+            const aiCoords = await getSubjectCoordinates(scoutCloudinaryUrl);
+            centerX = aiCoords.centerX;
+
+            io.emit('pipeline-update', {
+                status: 'scouting',
+                progress: 25,
+                message: `Smart cropping subject at X-axis: ${centerX}%`
+            });
+        } catch (scoutError) {
+            console.error('Scouting phase failed, defaulting to center crop (50):', scoutError);
+            centerX = 50;
+        }
+
         io.emit('pipeline-update', {
             status: 'trascoding',
             progress: 25,
@@ -73,7 +103,7 @@ export const processVideoAsset = async (req: Request, res: Response) => {
 
         //FFmpeg processing
         console.log(`FFmpeg Processing Started for video: ${videoId}`);
-        await processVideo(inputPath, outputPath);
+        await processVideo(inputPath, outputPath, centerX);
 
         const tempDir = path.dirname(outputPath);
         const framePaths = await extractVideoFrames(outputPath, tempDir);
@@ -132,11 +162,14 @@ export const processVideoAsset = async (req: Request, res: Response) => {
         });
 
         //Cleanup
-        if (fs.existsSync(inputPath)) {
+        if (inputPath && fs.existsSync(inputPath)) {
             fs.unlinkSync(inputPath);
         }
-        if (fs.existsSync(outputPath)) {
+        if (outputPath && fs.existsSync(outputPath)) {
             fs.unlinkSync(outputPath);
+        }
+        if (scoutFramePath && fs.existsSync(scoutFramePath)) {
+            fs.unlinkSync(scoutFramePath);
         }
         if (framePaths.length > 0) {
             framePaths.forEach(frame => fs.unlinkSync(frame));
@@ -155,6 +188,9 @@ export const processVideoAsset = async (req: Request, res: Response) => {
 
         if (inputPath && fs.existsSync(inputPath)) {
             fs.unlinkSync(inputPath);
+        }
+        if (scoutFramePath && fs.existsSync(scoutFramePath)) {
+            fs.unlinkSync(scoutFramePath);
         }
         res.status(500).json({ error: 'Internal server error during video processing' });
     }
