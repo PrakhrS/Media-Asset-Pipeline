@@ -8,6 +8,8 @@ export const initVideoModel = async(): Promise<void> => {
     local_filepath TEXT,
     cloudinary_url TEXT,
     processing_status VARCHAR(50) DEFAULT 'uploaded',
+    ai_caption TEXT,
+    ai_tags TEXT[],
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
     `;
 

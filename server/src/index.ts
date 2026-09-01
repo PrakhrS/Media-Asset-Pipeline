@@ -7,6 +7,7 @@ import http from 'http'
 import { Server } from 'socket.io';
 
 import { initVideoModel } from "./models/video.model.js";
+import { initVideoWorker } from "./workers/video.worker.js";
 import videoRoutes from "./routes/video.routes.js"
 
 const app = express();
@@ -15,7 +16,7 @@ app.use(express.json());
 
 const server = http.createServer(app);
 
-const io = new Server(server, {
+export const io = new Server(server, {
   cors: {
     origin: "http://localhost:5173",
     methods: ["GET", "POST"]
@@ -43,7 +44,8 @@ const startServer = async () => {
     await initVideoModel();
 
     server.listen(port, () => {
-        console.log(`Server running on port: ${port}`);
+      console.log(`Server running on port: ${port}`);
+      initVideoWorker();
     });
   } catch (error) {
     console.error("Critical: Database or Server initialization failed:", error);
