@@ -8,5 +8,14 @@ services:
       - redis-data:/data
     restart: unless-stopped
 
+  api:
+    build:
+      context: ./server
+    container_name: media-pipeline-api
+    ports:
+      - "5001:5001"
+    env_file:
+      - ./server/.env
+
 volumes:
   redis-data:
