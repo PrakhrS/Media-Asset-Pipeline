@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from "react";
 import {io} from 'socket.io-client';
 
-const socket = io('http://localhost:5001');
+const BACKEND_URL = "https://media-asset-pipeline.onrender.com"
+
+const socket = io(BACKEND_URL);
 
 interface VideoResultData {
   id?: string;
@@ -65,7 +67,7 @@ export default function VideoDashboard(){
 
     try {
       // 1. Initial upload to staging
-      const uploadRes = await fetch('http://localhost:5001/api/v1/video/local-upload', {
+      const uploadRes = await fetch(`${BACKEND_URL}/api/v1/video/local-upload`, {
         method: 'POST',
         body: formData,
       });
@@ -82,7 +84,7 @@ export default function VideoDashboard(){
       setProgress(25);
 
       // 2. Trigger FFmpeg + Cloudinary + AI Pipeline
-      const processRes = await fetch('http://localhost:5001/api/v1/video/process', {
+      const processRes = await fetch(`${BACKEND_URL}/api/v1/video/process`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ videoId }),
