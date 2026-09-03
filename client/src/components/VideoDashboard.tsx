@@ -130,7 +130,7 @@ export default function VideoDashboard(){
   };
 
   const tagsList = parseTags();
-  const videoSource = finalData?.secure_url || finalData?.video_url || finalData?.videoUrl
+  
 
   return (
   <div className="min-h-screen bg-gray-100 p-4 md:p-8 flex items-center justify-center">
